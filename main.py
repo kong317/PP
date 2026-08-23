@@ -17,6 +17,8 @@
 
 from companion.llm import LLMClient
 from companion.conversation import Conversation
+from companion.memory import Memory
+from companion.memory_extractor import MemoryExtractor
 
 
 SYSTEM_PROMPT = """
@@ -31,11 +33,19 @@ SYSTEM_PROMPT = """
 """
 
 
+# 1. 创建 LLM
 llm = LLMClient()
 
+# 2. 创建 Conversation
 conversation = Conversation(
     system_prompt=SYSTEM_PROMPT
 )
+
+# 3. 创建 Memory
+memory = Memory()
+
+# 4. 创建 MemoryExtractor，并把 LLM 注入进去
+memory_extractor = MemoryExtractor(llm)
 
 
 while True:
@@ -45,8 +55,12 @@ while True:
     if user_input == "exit":
         break
 
+    # 当前阶段先正常聊天
     conversation.add_user_message(user_input)
-
+    # Memory Extractor
+    extracted = memory_extractor.extract(user_input)
+    print("记忆分析：", extracted)
+#llm回复
     response = llm.chat(
         conversation.get_messages()
     )
