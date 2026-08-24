@@ -69,34 +69,30 @@ while True:
     # 当前阶段先正常聊天
     conversation.add_user_message(user_input)
     # Memory Extractor
-    extracted = memory_extractor.extract(user_input)
-    if extracted["should_remember"]:
+    conversation.add_user_message(user_input)
 
-        for item in extracted["memories"]:
-            memory.add(item)
-
-            print("记住：", item)
-    print("记忆分析：", extracted)
-    #根据最新 Memory 构建 System Prompt
+    # ① 先检索“已有记忆”
     relevant_memories = memory_retriever.retrieve(
         user_input,
         memory.get_all()
     )
-    print("相关记忆：", relevant_memories)#测试记忆检索功能实现
 
-    # ③构造 Memory Context
+    print("相关记忆：", relevant_memories)
+
+    # ② 使用已有记忆生成回答
     memory_context = "\n".join(
         f"- {item['content']}"
         for item in relevant_memories
     )
-    #更新SystemPrompt
+
     system_prompt = build_system_prompt(
         memory_context
     )
+
     conversation.update_system_prompt(
         system_prompt
     )
-#llm回复
+
     response = llm.chat(
         conversation.get_messages()
     )
@@ -104,3 +100,15 @@ while True:
     print("陪陪：", response)
 
     conversation.add_assistant_message(response)
+
+    # ③ 回答完成以后，再提取“新的记忆”
+    extracted = memory_extractor.extract(user_input)
+
+    print("记忆分析：", extracted)
+
+    if extracted["should_remember"]:
+
+        for item in extracted["memories"]:
+            memory.add(item)
+
+            print("记住：", item)
