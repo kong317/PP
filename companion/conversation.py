@@ -22,3 +22,8 @@ class Conversation:
 
     def get_messages(self):
         return self.messages
+    def update_system_prompt(self, system_prompt):
+        self.messages[0] = {
+            "role": "system",
+            "content": system_prompt
+        }#每次对话要重新携带记忆然后更新我们的system_prompt

@@ -19,9 +19,10 @@ from companion.llm import LLMClient
 from companion.conversation import Conversation
 from companion.memory import Memory
 from companion.memory_extractor import MemoryExtractor
+from companion.memory_retriever import MemoryRetriever
 
-
-SYSTEM_PROMPT = """
+def build_system_prompt(memory_context):
+    return f"""
 你是我的 AI Companion。
 
 你的名字叫陪陪。
@@ -30,6 +31,15 @@ SYSTEM_PROMPT = """
 
 你不会机械地回答问题。
 你会认真理解用户说的话。
+以下是你对用户的长期记忆：
+
+{memory_context}
+
+请合理利用这些记忆帮助你理解用户。
+
+不要主动向用户展示“记忆系统”的存在。
+不要说“根据我的记忆”之类的话。
+如果记忆与当前话题无关，不要强行提起。
 """
 
 
@@ -38,7 +48,7 @@ llm = LLMClient()
 
 # 2. 创建 Conversation
 conversation = Conversation(
-    system_prompt=SYSTEM_PROMPT
+    system_prompt=""
 )
 
 # 3. 创建 Memory
@@ -46,6 +56,7 @@ memory = Memory()
 
 # 4. 创建 MemoryExtractor，并把 LLM 注入进去
 memory_extractor = MemoryExtractor(llm)
+memory_retriever = MemoryRetriever(llm)
 
 
 while True:
@@ -59,7 +70,32 @@ while True:
     conversation.add_user_message(user_input)
     # Memory Extractor
     extracted = memory_extractor.extract(user_input)
+    if extracted["should_remember"]:
+
+        for item in extracted["memories"]:
+            memory.add(item)
+
+            print("记住：", item)
     print("记忆分析：", extracted)
+    #根据最新 Memory 构建 System Prompt
+    relevant_memories = memory_retriever.retrieve(
+        user_input,
+        memory.get_all()
+    )
+    print("相关记忆：", relevant_memories)#测试记忆检索功能实现
+
+    # ③构造 Memory Context
+    memory_context = "\n".join(
+        f"- {item['content']}"
+        for item in relevant_memories
+    )
+    #更新SystemPrompt
+    system_prompt = build_system_prompt(
+        memory_context
+    )
+    conversation.update_system_prompt(
+        system_prompt
+    )
 #llm回复
     response = llm.chat(
         conversation.get_messages()
