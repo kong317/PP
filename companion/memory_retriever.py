@@ -1,12 +1,13 @@
 #记忆检索功能初实现
 import json
 
-
+# 记忆检索器类
 class MemoryRetriever:
-
+    # 初始化方法，接受一个LLM客户端作为参数
     def __init__(self, llm):
         self.llm = llm
 
+    # 检索方法，接受用户消息和记忆列表作为参数
     def retrieve(self, user_message, memories):
 
         if not memories:

@@ -1,22 +1,15 @@
+from companion.database import Database
+
+
 class Memory:
 
-    def __init__(self):
-        self.memories = []
+    def __init__(self,database):
+        self.database = database# 数据库
 
-    def add(self, memory):
-        self.memories.append(memory)
+    def add(self, memory, user_id=""):
+        # 添加记忆（带 user_id，每个用户的记忆互相隔离）
+        self.database.insert_memory(memory, user_id)
 
-    def get_all(self):
-        return self.memories
-    def get_context(self):
-        if not self.memories:
-            return ""
-
-        lines = []
-
-        for memory in self.memories:
-            lines.append(
-                f"- {memory['content']}"
-            )
-
-        return "\n".join(lines)#格式化meory给大模型将memory变为易读取的Prompt
+    def get_all(self, user_id=""):
+        # 只获取指定用户的记忆
+        return self.database.get_memories(user_id)

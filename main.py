@@ -1,114 +1,94 @@
-# 这是一个示例 Python 脚本。
-
-# 按 Shift+F10 执行或将其替换为您的代码。
-# 按 双击 Shift 在所有地方搜索类、文件、工具窗口、操作和设置。
-
-
-# def print_hi(name):
-#     # 在下面的代码行中使用断点来调试脚本。
-#     print(f'Hi, {name}')  # 按 Ctrl+F8 切换断点。
-
-
-# # 按装订区域中的绿色按钮以运行脚本。
-# #if __name__ == '__main__':
-#     print_hi('HELLO,WORLD')
-
-# 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助
-
-from companion.llm import LLMClient
-from companion.conversation import Conversation
-from companion.memory import Memory
-from companion.memory_extractor import MemoryExtractor
-from companion.memory_retriever import MemoryRetriever
-
-def build_system_prompt(memory_context):
-    return f"""
-你是我的 AI Companion。
-
-你的名字叫陪陪。
-
-你的性格温柔、自然、稍微有一点调皮。
-
-你不会机械地回答问题。
-你会认真理解用户说的话。
-以下是你对用户的长期记忆：
-
-{memory_context}
-
-请合理利用这些记忆帮助你理解用户。
-
-不要主动向用户展示“记忆系统”的存在。
-不要说“根据我的记忆”之类的话。
-如果记忆与当前话题无关，不要强行提起。
+# -*- coding: utf-8 -*-
 """
+main.py —— 程序入口
+
+两种运行模式（同一套 Companion 核心，只是消息渠道不同）：
+
+    python main.py                    微信模式（默认）：扫码登录后监听微信消息
+    python main.py terminal           终端模式：命令行对话（原 main.py 的体验）
+    python main.py --test-send [文本]  向登录者本人发一条测试消息
+
+架构：
+    Terminal ─┐
+              ├──> Companion.chat(user_id, message) ──> Conversation/Memory/LLM
+    WeChat  ──┘        （Gateway 负责微信侧的登录、长轮询、收发）
+"""
+import sys
+
+from config import setup_logging
+
+# 终端模式下对话者的固定 user_id（记忆按用户隔离）
+TERMINAL_USER_ID = "terminal"
 
 
-# 1. 创建 LLM
-llm = LLMClient()
+def run_terminal(companion) -> None:
+    """终端对话模式：保留原 main.py 的交互体验。"""
+    print("陪陪已上线（终端模式）。输入 exit 退出。")
+    print("提示：直接运行 python main.py（不带参数）即可切换到微信模式。")
 
-# 2. 创建 Conversation
-conversation = Conversation(
-    system_prompt=""
-)
+    while True:
+        try:
+            user_input = input("你：")
+        except (EOFError, KeyboardInterrupt):
+            print("\n再见～")
+            return
 
-# 3. 创建 Memory
-memory = Memory()
+        if user_input.strip() == "exit":
+            print("再见～")
+            return
+        if not user_input.strip():
+            continue
 
-# 4. 创建 MemoryExtractor，并把 LLM 注入进去
-memory_extractor = MemoryExtractor(llm)
-memory_retriever = MemoryRetriever(llm)
+        try:
+            response = companion.chat(TERMINAL_USER_ID, user_input)
+        except Exception as e:
+            # LLM 异常不退出程序，提示后继续
+            print(f"陪陪出错了：{e}")
+            continue
+
+        print("陪陪：", response)
 
 
-while True:
+def run_wechat(companion, test_send: str | None = None) -> None:
+    """微信网关模式。"""
+    from wechat.gateway import WeChatGateway
 
-    user_input = input("你：")
+    gateway = WeChatGateway(companion)
 
-    if user_input == "exit":
-        break
+    if test_send is not None:
+        # 测试模式：只发一条测试消息就退出（验收 Test 5）
+        gateway.send_test_message(test_send)
+        return
 
-    # 当前阶段先正常聊天
-    conversation.add_user_message(user_input)
-    # Memory Extractor
-    conversation.add_user_message(user_input)
+    gateway.start()
 
-    # ① 先检索“已有记忆”
-    relevant_memories = memory_retriever.retrieve(
-        user_input,
-        memory.get_all()
-    )
 
-    print("相关记忆：", relevant_memories)
+def main() -> None:
+    # 初始化日志（控制台 + logs/app.log）
+    setup_logging()
 
-    # ② 使用已有记忆生成回答
-    memory_context = "\n".join(
-        f"- {item['content']}"
-        for item in relevant_memories
-    )
+    # Companion 核心（终端和微信共用同一份 Memory / LLM）
+    from companion.companion import Companion
 
-    system_prompt = build_system_prompt(
-        memory_context
-    )
+    companion = Companion()
 
-    conversation.update_system_prompt(
-        system_prompt
-    )
+    # 解析运行模式：默认微信模式（不带参数直接进入）
+    #   python main.py             → 微信模式
+    #   python main.py terminal    → 终端对话模式
+    args = sys.argv[1:]
+    mode = args[0] if args else "wechat"
 
-    response = llm.chat(
-        conversation.get_messages()
-    )
+    if mode == "terminal":
+        run_terminal(companion)
+        return
 
-    print("陪陪：", response)
+    # 微信模式（test_send 为 None 时正常启动网关）
+    test_send = None
+    if "--test-send" in args:
+        idx = args.index("--test-send")
+        test_send = args[idx + 1] if idx + 1 < len(args) else "这是一条测试消息 🎉"
+    run_wechat(companion, test_send)
 
-    conversation.add_assistant_message(response)
 
-    # ③ 回答完成以后，再提取“新的记忆”
-    extracted = memory_extractor.extract(user_input)
-
-    print("记忆分析：", extracted)
-
-    if extracted["should_remember"]:
-
-        for item in extracted["memories"]:
-            memory.add(item)
-
-            print("记住：", item)
+if __name__ == "__main__":
+    main()

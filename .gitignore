@@ -2,3 +2,12 @@
 .env
 __pycache__/
 *.pyc
+
+# 微信登录凭证（bot_token 等敏感信息，绝不提交到 Git）
+data/wechat/
+
+# 日志
+logs/
+
+# 本地数据库（含用户记忆，属隐私数据）
+data/companion.db

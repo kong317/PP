@@ -1,6 +1,6 @@
 import json
 
-
+# 记忆提取器类，
 class MemoryExtractor:
 
     def __init__(self, llm):
