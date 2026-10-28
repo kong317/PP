@@ -59,6 +59,17 @@ python main.py --test-send
 - `data/wechat/sync_buf.json`：getUpdates 游标（重启续传，不重复收消息）
 - `data/wechat/context_tokens.json`：回复消息所需的 context_token 缓存
 
+## 跨渠道身份统一
+
+同一个"你"在不同渠道的 ID 不同（终端=`terminal`，微信=`xxx@im.wechat`）。
+Gateway 会在调用 Companion 前解析身份：
+
+- **登录者本人**（账号主人）默认映射到 `terminal` —— 微信里聊天能"记得"终端时代的记忆，反之亦然
+- 其他微信用户保持独立身份，记忆互不共享
+- `.env` 可覆盖：
+  - `WECHAT_OWNER_ALIAS=terminal`（默认；设为空字符串则主人也按微信 ID 独立记忆）
+  - `USER_ALIASES={"friend@im.wechat":"terminal"}`（把某个好友显式映射到同一身份）
+
 ## 测试
 
 ```bash

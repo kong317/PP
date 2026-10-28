@@ -37,6 +37,7 @@ import logging
 import time
 import urllib.error
 
+import config
 from config import (
     WECHAT_BASE_URL,
     WECHAT_LOG_MESSAGE_CONTENT,
@@ -320,6 +321,42 @@ class WeChatGateway:
         return RETRY_DELAY
 
     # ------------------------------------------------------------------
+    # 用户身份解析（跨渠道统一）
+    # ------------------------------------------------------------------
+
+    def _resolve_user_id(self, sender_id: str) -> str:
+        """把微信渠道的 sender_id 解析成 Companion 的"规范用户 ID"。
+
+        为什么需要这层映射：
+            同一个人在不同渠道的 ID 不同——终端模式是 "terminal"，
+            微信里是 "xxx@im.wechat"。记忆和会话按 user_id 隔离，
+            不映射的话"微信里的陪陪"就认不出"终端里存的记忆"。
+
+        解析顺序：
+            1. USER_ALIASES 显式配置的别名（.env，最高优先级）
+            2. 登录者本人（账号的 ilink_user_id）→ WECHAT_OWNER_ALIAS（默认 "terminal"）
+            3. 其他微信用户：保持自己的 ID（互相隔离，不会共享记忆）
+
+        注意：context_token 缓存仍按原始 sender_id 存取（那是传输层的事），
+        这里只影响 Companion 侧的记忆/会话归属。
+        """
+        # ① 显式配置的别名
+        alias = config.USER_ALIASES.get(sender_id)
+        if alias:
+            return alias
+
+        # ② 登录者本人（账号主人）映射到终端身份
+        if (
+            config.WECHAT_OWNER_ALIAS
+            and self.account
+            and sender_id == self.account.user_id
+        ):
+            return config.WECHAT_OWNER_ALIAS
+
+        # ③ 其他用户：身份不变
+        return sender_id
+
+    # ------------------------------------------------------------------
     # 单条消息处理
     # ------------------------------------------------------------------
 
@@ -347,12 +384,16 @@ class WeChatGateway:
         else:
             logger.info(f"Message received from={msg.sender_id} len={len(msg.content)}")
 
-        # ④ 调用 Companion（AI 回复）
+        # ④ 解析规范用户 ID（跨渠道身份统一）→ 调用 Companion（AI 回复）
+        canonical_id = self._resolve_user_id(msg.sender_id)
+        if canonical_id != msg.sender_id:
+            logger.debug(f"User alias: {msg.sender_id} -> {canonical_id}")
+
         try:
-            response = self.companion.chat(msg.sender_id, msg.content)
+            response = self.companion.chat(canonical_id, msg.content)
         except Exception as e:
             # LLM 异常不能拖垮网关：记录日志 + 给用户回一条错误提示
-            logger.error(f"Companion.chat failed for {msg.sender_id}: {e}", exc_info=True)
+            logger.error(f"Companion.chat failed for {canonical_id}: {e}", exc_info=True)
             response = "抱歉，我刚才走神了……请稍后再试一次。"
 
         # ⑤ 回复微信（空回复兜底，避免发空消息）
